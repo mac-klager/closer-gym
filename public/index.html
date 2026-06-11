@@ -94,6 +94,8 @@
     max-height: 130px; line-height: 1.4;
   }
   #composer textarea:focus { border-color: var(--accent); }
+  #micBtn.recording { background: var(--danger); color: #fff; border-color: var(--danger); animation: pulse 1s infinite; }
+  #headerActions { display: none; gap: 8px; align-items: center; }
 
   /* ---------- feedback ---------- */
   #report { display: none; overflow-y: auto; padding: 26px 18px 60px; }
@@ -129,7 +131,8 @@
     <span id="leadOffer"></span>
     <span id="leadDiff"></span>
   </div>
-  <div id="headerActions" style="display:none">
+  <div id="headerActions">
+    <button class="btn ghost" id="muteBtn" style="padding:8px 12px;font-size:13px;display:none">🔊</button>
     <button class="btn danger" id="endBtn" style="padding:8px 16px;font-size:13px">End Call → Feedback</button>
   </div>
 </header>
@@ -155,6 +158,10 @@
             <option value="guarded">Closed off (they will shut it down fast)</option>
           </select>
         </div>
+        <div class="opt-group">
+          <label>Prospect voice (optional)</label>
+          <select id="voiceSelect"><option value="">🔇 Text only</option></select>
+        </div>
       </div>
       <button class="btn" id="startBtn">Start Call</button>
       <span class="hint" id="setupHint"></span>
@@ -166,6 +173,7 @@
       <div class="typing" id="typing"><i>●</i> <i>●</i> <i>●</i></div>
       <div id="composer">
         <textarea id="input" rows="1" placeholder="Say something to your prospect…"></textarea>
+        <button class="btn ghost" id="micBtn" style="padding:0 16px;font-size:18px" title="Speak your message">🎤</button>
         <button class="btn" id="sendBtn" style="padding:0 22px">Send</button>
       </div>
     </div>
@@ -197,12 +205,91 @@ const DEMEANOR_LABELS = {
   guarded: "Closed off",
 };
 
+// ---- voice: text-to-speech (prospect speaks) ----
+let voiceEnabled = false;
+let selectedVoice = null;
+let availableVoices = [];
+
+function populateVoices() {
+  availableVoices = speechSynthesis.getVoices().filter(v => v.lang.startsWith("en"));
+  const sel = $("voiceSelect");
+  while (sel.options.length > 1) sel.remove(1);
+  for (const v of availableVoices) {
+    const opt = document.createElement("option");
+    opt.value = v.name;
+    opt.textContent = `${v.name} (${v.lang})`;
+    sel.appendChild(opt);
+  }
+}
+if ("speechSynthesis" in window) {
+  populateVoices();
+  speechSynthesis.onvoiceschanged = populateVoices;
+} else {
+  $("voiceSelect").parentElement.style.display = "none";
+}
+
+function speak(text) {
+  if (!voiceEnabled || !("speechSynthesis" in window)) return;
+  speechSynthesis.cancel();
+  const utter = new SpeechSynthesisUtterance(text);
+  if (selectedVoice) utter.voice = selectedVoice;
+  speechSynthesis.speak(utter);
+}
+
+$("muteBtn").addEventListener("click", () => {
+  voiceEnabled = !voiceEnabled;
+  $("muteBtn").textContent = voiceEnabled ? "🔊" : "🔇";
+  if (!voiceEnabled) speechSynthesis.cancel();
+});
+
+// ---- voice: speech-to-text (rep talks instead of types) ----
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+let recognition = null;
+let recording = false;
+
+if (SpeechRecognition) {
+  recognition = new SpeechRecognition();
+  recognition.lang = "en-US";
+  recognition.interimResults = true;
+  recognition.continuous = false;
+
+  recognition.onresult = (e) => {
+    let transcript = "";
+    for (let i = 0; i < e.results.length; i++) transcript += e.results[i][0].transcript;
+    $("input").value = transcript;
+    $("input").dispatchEvent(new Event("input"));
+  };
+  recognition.onend = () => {
+    recording = false;
+    $("micBtn").classList.remove("recording");
+    if ($("input").value.trim()) send();
+  };
+  recognition.onerror = () => {
+    recording = false;
+    $("micBtn").classList.remove("recording");
+  };
+
+  $("micBtn").addEventListener("click", () => {
+    if (busy || callOver) return;
+    if (recording) {
+      recognition.stop();
+    } else {
+      recording = true;
+      $("input").value = "";
+      $("micBtn").classList.add("recording");
+      recognition.start();
+    }
+  });
+} else {
+  $("micBtn").style.display = "none";
+}
+
 function show(view) {
   $("setup").style.display = view === "setup" ? "flex" : "none";
   $("chat").style.display = view === "chat" ? "flex" : "none";
   $("report").style.display = view === "report" ? "block" : "none";
   $("leadCard").style.display = view === "setup" ? "none" : "flex";
-  $("headerActions").style.display = view === "chat" ? "block" : "none";
+  $("headerActions").style.display = view === "chat" ? "flex" : "none";
 }
 
 function addMsg(role, text) {
@@ -245,10 +332,18 @@ $("startBtn").addEventListener("click", async () => {
     $("leadOffer").textContent = data.leadCard.offer;
     $("leadDiff").textContent = "· " + (DEMEANOR_LABELS[data.difficulty] || data.difficulty);
     $("liveDot").classList.remove("off");
+
+    const voiceName = $("voiceSelect").value;
+    selectedVoice = availableVoices.find(v => v.name === voiceName) || null;
+    voiceEnabled = Boolean(selectedVoice);
+    $("muteBtn").style.display = voiceEnabled ? "inline-block" : "none";
+    $("muteBtn").textContent = "🔊";
+
     show("chat");
     addMsg("system", data.leadCard.name + " booked this call through your funnel. They just connected." +
       (data.calibratedWithTranscripts ? "" : "  (Tip: drop real call transcripts into /transcripts for extra realism.)"));
     addMsg("prospect", data.opener);
+    speak(data.opener);
     $("input").focus();
   } catch (e) {
     $("setupHint").textContent = "⚠️ " + e.message;
@@ -271,6 +366,7 @@ async function send() {
     const data = await api(`/api/session/${sessionId}/message`, { text });
     setTyping(false);
     addMsg("prospect", data.reply);
+    speak(data.reply);
     if (data.ended) {
       callOver = true;
       $("liveDot").classList.add("off");
@@ -297,6 +393,7 @@ $("input").addEventListener("input", function () {
 // ---- feedback ----
 $("endBtn").addEventListener("click", async () => {
   if (busy) return;
+  if ("speechSynthesis" in window) speechSynthesis.cancel();
   busy = true;
   $("endBtn").disabled = true;
   $("endBtn").textContent = "Coach is reviewing…";
