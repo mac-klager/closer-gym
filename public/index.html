@@ -148,11 +148,11 @@
           <select id="offerSelect"><option value="">🎲 Random</option></select>
         </div>
         <div class="opt-group">
-          <label>Difficulty</label>
+          <label>Prospect's starting demeanor</label>
           <select id="diffSelect">
-            <option value="easy">Warm lead</option>
-            <option value="realistic" selected>Realistic</option>
-            <option value="hard">Hard (they will hang up)</option>
+            <option value="open">Open</option>
+            <option value="reserved" selected>A little closed off</option>
+            <option value="guarded">Closed off (they will shut it down fast)</option>
           </select>
         </div>
       </div>
@@ -190,6 +190,12 @@ fetch("/api/offers").then(r => r.json()).then(offers => {
     $("offerSelect").appendChild(opt);
   }
 });
+
+const DEMEANOR_LABELS = {
+  open: "Open",
+  reserved: "A little closed off",
+  guarded: "Closed off",
+};
 
 function show(view) {
   $("setup").style.display = view === "setup" ? "flex" : "none";
@@ -237,7 +243,7 @@ $("startBtn").addEventListener("click", async () => {
     $("messages").innerHTML = "";
     $("leadName").textContent = data.leadCard.name;
     $("leadOffer").textContent = data.leadCard.offer;
-    $("leadDiff").textContent = "· " + data.difficulty;
+    $("leadDiff").textContent = "· " + (DEMEANOR_LABELS[data.difficulty] || data.difficulty);
     $("liveDot").classList.remove("off");
     show("chat");
     addMsg("system", data.leadCard.name + " booked this call through your funnel. They just connected." +

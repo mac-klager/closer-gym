@@ -1,12 +1,18 @@
 # Closer Gym — AI Discovery Call Trainer
 
 Text-based sales training simulator (kendo.ai-style, chat only) for high-ticket
-bizopp offers: remote closing programs, trading mentorships, e-com programs, agencies.
+discovery/closing calls. Two offers to train with:
+
+- **High Ticket Sales / Remote Closing Program**
+- **Fitness Transformation Coaching**
 
 Every call is a **unique, randomly generated prospect** — real job, family,
 finances, hidden pain, limiting beliefs, objection plan — who behaves like real
 prospects from actual call transcripts: guarded, skeptical, and allergic to
 being sold. No AI people-pleasing. You have to earn every layer.
+
+This is a **booked call** — the prospect already scheduled this. You open with
+rapport and frame control, then run discovery.
 
 ## What it trains (the discovery framework)
 
@@ -43,13 +49,19 @@ Two condensed excerpt files from real calls are already included.
 | Piece | What it does |
 |---|---|
 | `lib/seeds.js` | Random tables (40+ jobs, finances, pain triggers, personalities, beliefs, wildcards) — billions of combinations |
-| `lib/framework.js` | Industry behavior framework distilled from real bizopp call transcripts |
+| `lib/framework.js` | Shared discovery-call behavior framework + offer-specific verbatim phrases, distilled from real call transcripts |
 | `lib/prompts.js` | Persona generator, anti-people-pleaser roleplay prompt, coach grader |
 | `server.js` | Express API: create session / chat / feedback (Claude API, structured outputs, prompt caching) |
 | `public/index.html` | Chat UI + feedback report |
 
 Prospects can hang up on you (`[CALL_ENDED]`) if you're pushy, pitchy or scripted.
-Difficulties: **Warm lead / Realistic / Hard**.
+
+Pick the prospect's starting demeanor — how guarded they are walking into a call
+they already booked:
+
+- **Open** — friendly, shares easily, low guard
+- **A little closed off** — realistic baseline, guarded early, earns trust normally
+- **Closed off** — short and testing from message one, will shut the call down fast if you don't earn trust quickly
 
 ## Later (planned)
 

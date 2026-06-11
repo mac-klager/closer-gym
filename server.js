@@ -72,14 +72,14 @@ function transcriptString(messages) {
 }
 
 // ---------------------------------------------------------------------------
-// POST /api/session  { offer?: string, difficulty?: "easy"|"realistic"|"hard" }
+// POST /api/session  { offer?: string, difficulty?: "open"|"reserved"|"guarded" }
 // Generates a fresh randomized prospect and returns only what a rep would
 // realistically know pre-call. Full persona stays server-side.
 // ---------------------------------------------------------------------------
 app.post("/api/session", async (req, res) => {
   try {
-    const { offer: offerKey, difficulty = "realistic" } = req.body || {};
-    const seeds = rollSeeds(offerKey);
+    const { offer: offerKey, difficulty = "reserved" } = req.body || {};
+    const seeds = rollSeeds(offerKey, difficulty);
     const transcriptExcerpts = loadTranscriptExcerpts();
 
     const gen = await client.messages.create({
