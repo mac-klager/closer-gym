@@ -65,7 +65,7 @@ they already booked:
 
 ## Voice mode 🎙️
 
-Two ways to use your voice (both free, browser-native, no extra setup):
+Two ways to use your voice:
 
 - **Text chat + 🎤 button** — push-to-talk: click the mic, speak, it transcribes
   and sends when you stop.
@@ -75,9 +75,27 @@ Two ways to use your voice (both free, browser-native, no extra setup):
   and re-opens when they finish. Toggle the mic with 🎤, mute the prospect
   with 🔊.
 
-Needs Chrome, Edge or Safari (Firefox has no speech recognition) and HTTPS or
-localhost. Pick a specific prospect voice on the setup screen, or leave it on
-auto and a default English voice is used.
+Speech-to-text (your voice → text) is always free and browser-native. Needs
+Chrome, Edge or Safari (Firefox has no speech recognition) and HTTPS or
+localhost.
+
+### Prospect voices
+
+By default the prospect speaks using your browser's built-in voices (free,
+but robotic). For natural-sounding voices, add an [ElevenLabs](https://elevenlabs.io)
+API key:
+
+```bash
+# in .env
+ELEVENLABS_API_KEY=...
+# ELEVENLABS_MODEL=eleven_turbo_v2_5   (default — fast + cheap)
+```
+
+With a key set, the "Prospect voice" dropdown automatically lists your
+ElevenLabs voices instead. Without one, it falls back to browser voices —
+the app works either way. ElevenLabs has a free tier (10k characters/month);
+beyond that it's pay-as-you-go (~$0.30 per 1k characters, roughly $0.05-0.15
+per call depending on length).
 
 ## Later (planned)
 

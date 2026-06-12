@@ -218,8 +218,11 @@ const DEMEANOR_LABELS = {
 // States: listening (mic open) → silence detected → send → thinking →
 // prospect speaks (TTS, mic closed to avoid echo) → mic re-opens. Repeat.
 let voiceEnabled = false;
-let selectedVoice = null;
-let availableVoices = [];
+let selectedVoice = null;     // ElevenLabs voice id (string) or browser SpeechSynthesisVoice
+let availableVoices = [];     // browser voices (fallback)
+let ttsProvider = "browser";  // "elevenlabs" | "browser"
+let elVoices = [];            // ElevenLabs voices, if configured
+let currentAudio = null;      // playing ElevenLabs <audio>, if any
 let voiceCall = false;     // hands-free mode active for this session
 let micLive = false;       // open mic should be running (user can pause)
 let recognizing = false;
@@ -228,8 +231,9 @@ let silenceTimer = null;
 let heardText = "";
 const SILENCE_MS = 1500;   // pause length that counts as "done talking"
 
-function populateVoices() {
+function populateBrowserVoices() {
   availableVoices = speechSynthesis.getVoices().filter(v => v.lang.startsWith("en"));
+  if (ttsProvider !== "browser") return;
   const sel = $("voiceSelect");
   while (sel.options.length > 1) sel.remove(1);
   for (const v of availableVoices) {
@@ -240,13 +244,36 @@ function populateVoices() {
   }
 }
 if ("speechSynthesis" in window) {
-  populateVoices();
-  speechSynthesis.onvoiceschanged = populateVoices;
-} else {
+  populateBrowserVoices();
+  speechSynthesis.onvoiceschanged = populateBrowserVoices;
+} else if (ttsProvider === "browser") {
   $("voiceSelect").parentElement.style.display = "none";
 }
 
+// Load voices: prefer ElevenLabs (natural voices) if the server has a key,
+// otherwise fall back to the browser's built-in voices.
+fetch("/api/voices").then(r => r.json()).then(data => {
+  if (data.provider === "elevenlabs" && data.voices.length) {
+    ttsProvider = "elevenlabs";
+    elVoices = data.voices;
+    const sel = $("voiceSelect");
+    while (sel.options.length > 1) sel.remove(1);
+    for (const v of elVoices) {
+      const opt = document.createElement("option");
+      const tags = [v.gender, v.accent].filter(Boolean).join(", ");
+      opt.value = v.id;
+      opt.textContent = `🎙️ ${v.name}${tags ? ` (${tags})` : ""}`;
+      sel.appendChild(opt);
+    }
+    $("voiceSelect").parentElement.style.display = "";
+  } else {
+    ttsProvider = "browser";
+    populateBrowserVoices();
+  }
+}).catch(() => { ttsProvider = "browser"; populateBrowserVoices(); });
+
 function pickDefaultVoice() {
+  if (ttsProvider === "elevenlabs") return elVoices[0]?.id || null;
   return availableVoices.find(v => /Google US English/i.test(v.name))
       || availableVoices.find(v => v.lang === "en-US")
       || availableVoices[0] || null;
@@ -259,11 +286,40 @@ function setVoiceStatus(text) {
   el.textContent = text;
 }
 
+function stopSpeaking() {
+  if (currentAudio) { currentAudio.pause(); currentAudio = null; }
+  if ("speechSynthesis" in window) speechSynthesis.cancel();
+  ttsSpeaking = false;
+}
+
 function speak(text, onDone) {
-  if (!voiceEnabled || !("speechSynthesis" in window)) { if (onDone) onDone(); return; }
+  if (!voiceEnabled || !selectedVoice) { if (onDone) onDone(); return; }
+
+  if (ttsProvider === "elevenlabs") {
+    stopSpeaking();
+    ttsSpeaking = true;
+    fetch("/api/tts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, voiceId: selectedVoice }),
+    })
+      .then(r => { if (!r.ok) throw new Error("TTS request failed"); return r.blob(); })
+      .then(blob => {
+        const url = URL.createObjectURL(blob);
+        currentAudio = new Audio(url);
+        const finish = () => { ttsSpeaking = false; URL.revokeObjectURL(url); currentAudio = null; if (onDone) onDone(); };
+        currentAudio.onended = finish;
+        currentAudio.onerror = finish;
+        currentAudio.play().catch(finish);
+      })
+      .catch(() => { ttsSpeaking = false; if (onDone) onDone(); });
+    return;
+  }
+
+  if (!("speechSynthesis" in window)) { if (onDone) onDone(); return; }
   speechSynthesis.cancel();
   const utter = new SpeechSynthesisUtterance(text);
-  if (selectedVoice) utter.voice = selectedVoice;
+  utter.voice = selectedVoice;
   ttsSpeaking = true;
   utter.onend = () => { ttsSpeaking = false; if (onDone) onDone(); };
   utter.onerror = () => { ttsSpeaking = false; if (onDone) onDone(); };
@@ -273,7 +329,7 @@ function speak(text, onDone) {
 $("muteBtn").addEventListener("click", () => {
   voiceEnabled = !voiceEnabled;
   $("muteBtn").textContent = voiceEnabled ? "🔊" : "🔇";
-  if (!voiceEnabled) { speechSynthesis.cancel(); ttsSpeaking = false; }
+  if (!voiceEnabled) stopSpeaking();
 });
 
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -416,9 +472,13 @@ $("startBtn").addEventListener("click", async () => {
     $("leadDiff").textContent = "· " + (DEMEANOR_LABELS[data.difficulty] || data.difficulty);
     $("liveDot").classList.remove("off");
 
-    const voiceName = $("voiceSelect").value;
-    selectedVoice = availableVoices.find(v => v.name === voiceName)
-      || (voiceCall ? pickDefaultVoice() : null);
+    const voiceSel = $("voiceSelect").value;
+    if (ttsProvider === "elevenlabs") {
+      selectedVoice = voiceSel || (voiceCall ? pickDefaultVoice() : null);
+    } else {
+      selectedVoice = availableVoices.find(v => v.name === voiceSel)
+        || (voiceCall ? pickDefaultVoice() : null);
+    }
     voiceEnabled = Boolean(selectedVoice);
     $("muteBtn").style.display = voiceEnabled ? "inline-block" : "none";
     $("muteBtn").textContent = "🔊";
@@ -494,7 +554,7 @@ $("endBtn").addEventListener("click", async () => {
   if (busy) return;
   micLive = false;
   pauseMic();
-  if ("speechSynthesis" in window) { speechSynthesis.cancel(); ttsSpeaking = false; }
+  stopSpeaking();
   $("voiceStatus").style.display = "none";
   busy = true;
   $("endBtn").disabled = true;

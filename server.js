@@ -30,6 +30,11 @@ const client = new Anthropic({ apiKey: API_KEY || "missing-key" });
 const MODEL = process.env.ANTHROPIC_MODEL || "claude-opus-4-8";
 const PORT = process.env.PORT || 3000;
 
+// Optional: ElevenLabs for natural prospect voices (voice mode).
+// Without a key, the UI falls back to the browser's built-in voices.
+const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
+const ELEVENLABS_MODEL = process.env.ELEVENLABS_MODEL || "eleven_turbo_v2_5";
+
 // In-memory session store. { id -> { persona, offer, difficulty, messages, ended } }
 const sessions = new Map();
 
@@ -234,6 +239,71 @@ app.get("/api/offers", (_req, res) => {
   );
 });
 
+// ---------------------------------------------------------------------------
+// GET /api/voices
+// Lists ElevenLabs voices for the prospect-voice picker. If no key is
+// configured, returns provider: "browser" so the UI falls back to the
+// built-in Web Speech voices.
+// ---------------------------------------------------------------------------
+app.get("/api/voices", async (_req, res) => {
+  if (!ELEVENLABS_API_KEY) return res.json({ provider: "browser", voices: [] });
+
+  try {
+    const r = await fetch("https://api.elevenlabs.io/v1/voices", {
+      headers: { "xi-api-key": ELEVENLABS_API_KEY },
+    });
+    if (!r.ok) throw new Error(`ElevenLabs voices request failed: ${r.status}`);
+    const data = await r.json();
+    const voices = (data.voices || []).map((v) => ({
+      id: v.voice_id,
+      name: v.name,
+      gender: v.labels?.gender,
+      accent: v.labels?.accent,
+    }));
+    res.json({ provider: "elevenlabs", voices });
+  } catch (err) {
+    console.error("voices fetch failed:", err);
+    res.json({ provider: "browser", voices: [] });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/tts  { text, voiceId }
+// Proxies ElevenLabs text-to-speech and streams back an mp3. Keeps the API
+// key server-side.
+// ---------------------------------------------------------------------------
+app.post("/api/tts", async (req, res) => {
+  if (!ELEVENLABS_API_KEY) return res.status(400).json({ error: "ElevenLabs not configured" });
+
+  const { text, voiceId } = req.body || {};
+  if (!text || !voiceId) return res.status(400).json({ error: "text and voiceId required" });
+
+  try {
+    const r = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+      method: "POST",
+      headers: {
+        "xi-api-key": ELEVENLABS_API_KEY,
+        "Content-Type": "application/json",
+        Accept: "audio/mpeg",
+      },
+      body: JSON.stringify({
+        text,
+        model_id: ELEVENLABS_MODEL,
+        voice_settings: { stability: 0.5, similarity_boost: 0.75 },
+      }),
+    });
+    if (!r.ok) {
+      const detail = await r.text();
+      return res.status(r.status).json({ error: detail || "TTS request failed" });
+    }
+    res.set("Content-Type", "audio/mpeg");
+    res.send(Buffer.from(await r.arrayBuffer()));
+  } catch (err) {
+    console.error("tts failed:", err);
+    res.status(500).json({ error: err.message || "TTS failed" });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`\n  Sales Trainer running → http://localhost:${PORT}`);
   console.log(`  Model: ${MODEL}`);
@@ -242,5 +312,10 @@ app.listen(PORT, () => {
     t
       ? "  Transcript calibration: ACTIVE (files found in ./transcripts)"
       : "  Transcript calibration: none yet — drop .txt files into ./transcripts\n"
+  );
+  console.log(
+    ELEVENLABS_API_KEY
+      ? "  Voice mode: ElevenLabs voices ACTIVE\n"
+      : "  Voice mode: browser voices (set ELEVENLABS_API_KEY for natural voices)\n"
   );
 });
