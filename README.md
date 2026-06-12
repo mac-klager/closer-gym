@@ -63,6 +63,22 @@ they already booked:
 - **A little closed off** — realistic baseline, guarded early, earns trust normally
 - **Closed off** — short and testing from message one, will shut the call down fast if you don't earn trust quickly
 
+## Voice mode 🎙️
+
+Two ways to use your voice (both free, browser-native, no extra setup):
+
+- **Text chat + 🎤 button** — push-to-talk: click the mic, speak, it transcribes
+  and sends when you stop.
+- **Voice call (hands-free)** — full open-mic loop: the prospect *speaks* their
+  replies out loud, the mic listens continuously, and pausing for ~1.5s sends
+  your turn automatically. The mic closes while the prospect talks (no echo)
+  and re-opens when they finish. Toggle the mic with 🎤, mute the prospect
+  with 🔊.
+
+Needs Chrome, Edge or Safari (Firefox has no speech recognition) and HTTPS or
+localhost. Pick a specific prospect voice on the setup screen, or leave it on
+auto and a default English voice is used.
+
 ## Later (planned)
 
 - Objection handling mode after the price drop (post-presentation gauntlet)
