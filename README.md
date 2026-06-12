@@ -88,7 +88,7 @@ API key:
 ```bash
 # in .env
 ELEVENLABS_API_KEY=...
-# ELEVENLABS_MODEL=eleven_turbo_v2_5   (default — fast + cheap)
+# ELEVENLABS_MODEL=eleven_flash_v2_5   (default — lowest latency)
 ```
 
 With a key set, the "Prospect voice" dropdown automatically lists your

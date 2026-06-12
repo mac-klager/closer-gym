@@ -33,7 +33,8 @@ const PORT = process.env.PORT || 3000;
 // Optional: ElevenLabs for natural prospect voices (voice mode).
 // Without a key, the UI falls back to the browser's built-in voices.
 const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
-const ELEVENLABS_MODEL = process.env.ELEVENLABS_MODEL || "eleven_turbo_v2_5";
+// flash = lowest latency (~half of turbo); good quality for conversational use.
+const ELEVENLABS_MODEL = process.env.ELEVENLABS_MODEL || "eleven_flash_v2_5";
 
 // In-memory session store. { id -> { persona, offer, difficulty, messages, ended } }
 const sessions = new Map();

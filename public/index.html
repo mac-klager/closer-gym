@@ -97,6 +97,7 @@
   #micBtn.recording { background: var(--danger); color: #fff; border-color: var(--danger); animation: pulse 1s infinite; }
   #headerActions { display: none; gap: 8px; align-items: center; }
   #voiceStatus { flex-shrink: 0; text-align: center; font-size: 13px; color: var(--muted); padding: 8px 12px 0; display: none; }
+  #soundGate { flex-shrink: 0; margin: 8px auto 0; display: none; background: var(--warn); color: #1a1205; border: none; border-radius: 10px; padding: 10px 18px; font-size: 14px; font-weight: 700; cursor: pointer; animation: pulse 1.4s infinite; }
 
   /* ---------- feedback ---------- */
   #report { display: none; overflow-y: auto; padding: 26px 18px 60px; }
@@ -180,6 +181,7 @@
       <div id="messages"></div>
       <div class="typing" id="typing"><i>●</i> <i>●</i> <i>●</i></div>
       <div id="voiceStatus"></div>
+      <button id="soundGate">🔊 Tap to hear the prospect</button>
       <div id="composer">
         <textarea id="input" rows="1" placeholder="Say something to your prospect…"></textarea>
         <button class="btn ghost" id="micBtn" style="padding:0 16px;font-size:18px" title="Speak your message">🎤</button>
@@ -282,7 +284,7 @@ function pickDefaultVoice() {
 
 function setVoiceStatus(text) {
   const el = $("voiceStatus");
-  if (!voiceCall || !text) { el.style.display = "none"; return; }
+  if ((!voiceCall && !voiceEnabled) || !text) { el.style.display = "none"; return; }
   el.style.display = "block";
   el.textContent = text;
 }
@@ -314,12 +316,25 @@ function stopSpeaking() {
   ttsSpeaking = false;
 }
 
+// If Chrome blocks programmatic playback, we surface a "tap to hear" button and
+// resume the queued clip on the user's click (a fresh gesture).
+let pendingPlayback = null;
+function showSoundGate(on) {
+  $("soundGate").style.display = on ? "block" : "none";
+}
+$("soundGate").addEventListener("click", () => {
+  showSoundGate(false);
+  audioUnlocked = true;
+  if (pendingPlayback) { const p = pendingPlayback; pendingPlayback = null; p(); }
+});
+
 function speak(text, onDone) {
   if (!voiceEnabled || !selectedVoice) { if (onDone) onDone(); return; }
 
   if (ttsProvider === "elevenlabs") {
     stopSpeaking();
     ttsSpeaking = true;
+    setVoiceStatus("🔊 generating " + ($("leadName").textContent || "prospect") + "'s voice…");
     fetch("/api/tts", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -334,14 +349,26 @@ function speak(text, onDone) {
         const finish = () => { ttsSpeaking = false; URL.revokeObjectURL(url); if (onDone) onDone(); };
         a.onended = finish;
         a.onerror = finish;
-        a.play().catch(err => {
-          console.warn("Audio play blocked:", err.name, err.message);
-          finish();
-        });
+        const play = () => {
+          setVoiceStatus("🗣️ " + ($("leadName").textContent || "prospect") + " is speaking…");
+          a.play().catch(err => {
+            // Autoplay blocked — keep the clip and let the user tap to hear it.
+            console.warn("Audio play blocked:", err.name, err.message);
+            if (err.name === "NotAllowedError") {
+              pendingPlayback = play;
+              showSoundGate(true);
+              setVoiceStatus("🔇 Chrome blocked the sound — tap the button to hear " + ($("leadName").textContent || "the prospect"));
+            } else {
+              finish();
+            }
+          });
+        };
+        play();
       })
       .catch(err => {
         console.error("TTS error:", err);
         ttsSpeaking = false;
+        setVoiceStatus("⚠️ voice error — check the connection");
         if (onDone) onDone();
       });
     return;
