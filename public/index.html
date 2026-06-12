@@ -222,7 +222,8 @@ let selectedVoice = null;     // ElevenLabs voice id (string) or browser SpeechS
 let availableVoices = [];     // browser voices (fallback)
 let ttsProvider = "browser";  // "elevenlabs" | "browser"
 let elVoices = [];            // ElevenLabs voices, if configured
-let currentAudio = null;      // playing ElevenLabs <audio>, if any
+let ttsAudio = null;          // single reused <audio> element for ElevenLabs playback
+let audioUnlocked = false;    // whether autoplay has been unlocked by a user gesture
 let voiceCall = false;     // hands-free mode active for this session
 let micLive = false;       // open mic should be running (user can pause)
 let recognizing = false;
@@ -286,8 +287,30 @@ function setVoiceStatus(text) {
   el.textContent = text;
 }
 
+// A tiny silent mp3 — played during the Start-Call click (a user gesture) to
+// unlock autoplay so the prospect's voice can play later without a gesture.
+const SILENT_MP3 = "data:audio/mpeg;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4LjEyLjEwMAAAAAAAAAAAAAAA//tQxAADB8AhSmxhIIEVCSiJrDCQBTcu3UrAIwUdkRgQbFAZC1CQEwTJ9mjRvBA4UOLD8nKVOWfh+UlK3z/177OXrfOdKl7pyn3Xf//WreyTEFNRTMuOTkuNVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//tQxAADwAABpAAAACAAADSAAAAEVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV";
+
+function getTtsAudio() {
+  if (!ttsAudio) { ttsAudio = new Audio(); ttsAudio.preload = "auto"; }
+  return ttsAudio;
+}
+
+// Must run inside a user gesture (the Start Call click).
+function unlockAudio() {
+  if (audioUnlocked || ttsProvider !== "elevenlabs") return;
+  const a = getTtsAudio();
+  a.muted = true;
+  a.src = SILENT_MP3;
+  const p = a.play();
+  if (p && p.then) {
+    p.then(() => { a.pause(); a.currentTime = 0; a.muted = false; audioUnlocked = true; })
+     .catch(() => { a.muted = false; });
+  }
+}
+
 function stopSpeaking() {
-  if (currentAudio) { currentAudio.pause(); currentAudio = null; }
+  if (ttsAudio) { try { ttsAudio.pause(); } catch {} }
   if ("speechSynthesis" in window) speechSynthesis.cancel();
   ttsSpeaking = false;
 }
@@ -306,13 +329,22 @@ function speak(text, onDone) {
       .then(r => { if (!r.ok) throw new Error("TTS request failed"); return r.blob(); })
       .then(blob => {
         const url = URL.createObjectURL(blob);
-        currentAudio = new Audio(url);
-        const finish = () => { ttsSpeaking = false; URL.revokeObjectURL(url); currentAudio = null; if (onDone) onDone(); };
-        currentAudio.onended = finish;
-        currentAudio.onerror = finish;
-        currentAudio.play().catch(finish);
+        const a = getTtsAudio();
+        a.muted = false;
+        a.src = url;
+        const finish = () => { ttsSpeaking = false; URL.revokeObjectURL(url); if (onDone) onDone(); };
+        a.onended = finish;
+        a.onerror = finish;
+        a.play().catch(err => {
+          console.warn("Audio play blocked:", err.name, err.message);
+          finish();
+        });
       })
-      .catch(() => { ttsSpeaking = false; if (onDone) onDone(); });
+      .catch(err => {
+        console.error("TTS error:", err);
+        ttsSpeaking = false;
+        if (onDone) onDone();
+      });
     return;
   }
 
@@ -457,6 +489,7 @@ $("startBtn").addEventListener("click", async () => {
     $("setupHint").textContent = "⚠️ Voice calls need Chrome, Edge or Safari (Firefox doesn't support speech recognition).";
     return;
   }
+  unlockAudio(); // this click is a user gesture — unlock audio for later TTS
   $("startBtn").disabled = true;
   $("setupHint").textContent = "Generating your prospect… (they're a whole person, give it a few seconds)";
   try {
@@ -484,15 +517,13 @@ $("startBtn").addEventListener("click", async () => {
     $("muteBtn").textContent = "🔊";
 
     show("chat");
-    addMsg("system", data.leadCard.name + " booked this call through your funnel. They just connected." +
+    const pname = data.leadCard.name;
+    addMsg("system", "Rapport's already done — " + pname + " is warm and ready. Open with your intent question (what's the biggest reason they want to change, and why now?)." +
       (data.calibratedWithTranscripts ? "" : "  (Tip: drop real call transcripts into /transcripts for extra realism.)"));
-    addMsg("prospect", data.opener);
     if (voiceCall) {
       micLive = true;
-      setVoiceStatus("🗣️ " + data.leadCard.name + " is speaking…");
-      speak(data.opener, () => { if (micLive && !callOver) tryStartRecognition(); });
-    } else {
-      speak(data.opener);
+      setVoiceStatus("🎙️ You're live — start by speaking. Open with your intent question.");
+      tryStartRecognition();
     }
     $("input").focus();
   } catch (e) {

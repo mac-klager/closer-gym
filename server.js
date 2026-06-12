@@ -108,7 +108,9 @@ app.post("/api/session", async (req, res) => {
       offer: seeds.offer,
       difficulty,
       transcriptExcerpts,
-      messages: [{ role: "assistant", content: persona.openerMessage }],
+      // Rapport/framing is skipped — the rep opens with the intent question,
+      // so the conversation starts empty and the REP speaks first.
+      messages: [],
       ended: false,
       createdAt: Date.now(),
     };
@@ -123,7 +125,7 @@ app.post("/api/session", async (req, res) => {
         source: "Booked via funnel — application call",
       },
       difficulty,
-      opener: persona.openerMessage,
+      ready: true,
       calibratedWithTranscripts: Boolean(transcriptExcerpts),
     });
   } catch (err) {
