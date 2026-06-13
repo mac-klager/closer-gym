@@ -28,6 +28,9 @@ if (!API_KEY) {
 }
 const client = new Anthropic({ apiKey: API_KEY || "missing-key" });
 const MODEL = process.env.ANTHROPIC_MODEL || "claude-opus-4-8";
+// Per-turn roleplay replies favor speed — a fast model with no thinking keeps the
+// voice loop snappy. Bump to claude-sonnet-4-6 or claude-opus-4-8 for more nuance.
+const ROLEPLAY_MODEL = process.env.ROLEPLAY_MODEL || "claude-haiku-4-5";
 const PORT = process.env.PORT || 3000;
 
 // Optional: ElevenLabs for natural prospect voices (voice mode).
@@ -149,11 +152,12 @@ app.post("/api/session/:id/message", async (req, res) => {
   try {
     session.messages.push({ role: "user", content: text });
 
+    // Roleplay turns prioritize LOW LATENCY over deep reasoning — use the fast
+    // model with no extended thinking. (Persona generation and the end-of-call
+    // feedback still use the heavyweight model where quality matters.)
     const response = await client.messages.create({
-      model: MODEL,
+      model: ROLEPLAY_MODEL,
       max_tokens: 1024,
-      thinking: { type: "adaptive" },
-      output_config: { effort: "low" },
       system: [
         {
           type: "text",
@@ -309,7 +313,7 @@ app.post("/api/tts", async (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`\n  Sales Trainer running → http://localhost:${PORT}`);
-  console.log(`  Model: ${MODEL}`);
+  console.log(`  Model: ${MODEL}  ·  Roleplay (per-turn): ${ROLEPLAY_MODEL}`);
   const t = loadTranscriptExcerpts(100);
   console.log(
     t

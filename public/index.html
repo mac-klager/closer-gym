@@ -232,7 +232,7 @@ let recognizing = false;
 let ttsSpeaking = false;
 let silenceTimer = null;
 let heardText = "";
-const SILENCE_MS = 1500;   // pause length that counts as "done talking"
+const SILENCE_MS = 1100;   // pause length that counts as "done talking"
 
 function populateBrowserVoices() {
   availableVoices = speechSynthesis.getVoices().filter(v => v.lang.startsWith("en"));
@@ -346,7 +346,17 @@ function speak(text, onDone) {
         const a = getTtsAudio();
         a.muted = false;
         a.src = url;
-        const finish = () => { ttsSpeaking = false; URL.revokeObjectURL(url); if (onDone) onDone(); };
+        let done = false;
+        const finish = () => {
+          if (done) return;
+          done = true;
+          clearTimeout(backstop);
+          ttsSpeaking = false;
+          URL.revokeObjectURL(url);
+          if (onDone) onDone();
+        };
+        // Safety net: never let a stuck audio element freeze the whole loop.
+        const backstop = setTimeout(finish, 30000);
         a.onended = finish;
         a.onerror = finish;
         const play = () => {
@@ -472,6 +482,14 @@ if (SpeechRecognition) {
       else { heardText = ""; $("input").value = ""; tryStartRecognition(); }
     }
   });
+
+  // Watchdog: Chrome's SpeechRecognition silently drops out sometimes. If we're
+  // in a live voice call and the mic should be open but isn't, restart it.
+  setInterval(() => {
+    if (voiceCall && micLive && !busy && !ttsSpeaking && !recognizing && !callOver) {
+      tryStartRecognition();
+    }
+  }, 2000);
 } else {
   $("micBtn").style.display = "none";
 }
